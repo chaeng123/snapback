@@ -20,6 +20,15 @@ type SleepRecommendation = {
   reason: string
 }
 
+type ConditionLevel = 1 | 2 | 3 | 4 | 5
+
+type ConditionRecord = {
+  score: ConditionLevel
+  note: string
+}
+
+type ConditionMap = Record<string, ConditionRecord>
+
 function parseLocalDate(value: string) {
   const [year, month, day] = value.split('-').map(Number)
   return new Date(year, month - 1, day)
@@ -143,9 +152,27 @@ function recommendSleep(hours: boolean[]): Omit<SleepRecommendation, 'date'> {
   }
 }
 
+function getConditionLabel(score?: number) {
+  switch (score) {
+    case 1:
+      return '매우 나쁨'
+    case 2:
+      return '나쁨'
+    case 3:
+      return '보통'
+    case 4:
+      return '좋음'
+    case 5:
+      return '매우 좋음'
+    default:
+      return '미입력'
+  }
+}
+
 export default function SleepPlanPage() {
   const router = useRouter()
   const [data, setData] = useState<SavedPayload | null>(null)
+  const [conditions, setConditions] = useState<ConditionMap>({})
 
   useEffect(() => {
     const raw = localStorage.getItem('sleep-onboarding-schedule')
@@ -162,6 +189,18 @@ export default function SleepPlanPage() {
     }
   }, [router])
 
+  useEffect(() => {
+    const rawConditions = localStorage.getItem('sleep-condition-records')
+    if (!rawConditions) return
+
+    try {
+      const parsed = JSON.parse(rawConditions) as ConditionMap
+      setConditions(parsed)
+    } catch {
+      setConditions({})
+    }
+  }, [])
+
   const recommendations = useMemo(() => {
     if (!data) return []
 
@@ -175,13 +214,13 @@ export default function SleepPlanPage() {
   }, [data])
 
   const averageSleepHours = useMemo(() => {
-    if (recommendations.length === 0) return 0
+    if (recommendations.length === 0) return '0.0'
 
     const total = recommendations.reduce((sum, item) => {
       const [sh, sm] = item.sleepStart.split(':').map(Number)
       const [eh, em] = item.sleepEnd.split(':').map(Number)
 
-      let start = sh + sm / 60
+      const start = sh + sm / 60
       let end = eh + em / 60
       if (end <= start) end += 24
 
@@ -190,6 +229,47 @@ export default function SleepPlanPage() {
 
     return (total / recommendations.length).toFixed(1)
   }, [recommendations])
+
+  const averageCondition = useMemo(() => {
+    const values = Object.values(conditions)
+      .map((item) => item.score)
+      .filter(Boolean)
+
+    if (values.length === 0) return null
+
+    const avg = values.reduce((a, b) => a + b, 0) / values.length
+    return avg.toFixed(1)
+  }, [conditions])
+
+  function updateConditionScore(date: string, score: ConditionLevel) {
+    setConditions((prev) => {
+      const next = {
+        ...prev,
+        [date]: {
+          score,
+          note: prev[date]?.note ?? '',
+        },
+      }
+
+      localStorage.setItem('sleep-condition-records', JSON.stringify(next))
+      return next
+    })
+  }
+
+  function updateConditionNote(date: string, note: string) {
+    setConditions((prev) => {
+      const next = {
+        ...prev,
+        [date]: {
+          score: prev[date]?.score ?? 3,
+          note,
+        },
+      }
+
+      localStorage.setItem('sleep-condition-records', JSON.stringify(next))
+      return next
+    })
+  }
 
   if (!data) return null
 
@@ -205,7 +285,7 @@ export default function SleepPlanPage() {
             {data.hospital || '기관 미입력'} · {data.department || '부서 미입력'} · {data.shiftType}
           </p>
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div className="mt-5 grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl bg-slate-50 p-4">
               <p className="text-xs text-slate-500">등록 기간</p>
               <p className="text-lg font-bold text-slate-900">
@@ -219,36 +299,92 @@ export default function SleepPlanPage() {
                 {averageSleepHours}시간
               </p>
             </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs text-slate-500">평균 컨디션</p>
+              <p className="text-lg font-bold text-slate-900">
+                {averageCondition ? `${averageCondition} / 5` : '아직 없음'}
+              </p>
+            </div>
           </div>
         </div>
 
         <div className="mt-6 space-y-4">
-          {recommendations.map((item) => (
-            <div
-              key={item.date}
-              className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100"
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-lg font-bold text-slate-900">
-                    {formatDisplayDate(item.date)}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    근무시간: {item.workLabel}
-                  </p>
+          {recommendations.map((item) => {
+            const condition = conditions[item.date]
+
+            return (
+              <div
+                key={item.date}
+                className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100"
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-lg font-bold text-slate-900">
+                      {formatDisplayDate(item.date)}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      근무시간: {item.workLabel}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-sky-50 px-4 py-3">
+                    <p className="text-xs text-sky-700">추천 수면 시간</p>
+                    <p className="text-xl font-bold text-sky-900">
+                      {item.sleepStart} ~ {item.sleepEnd}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="rounded-2xl bg-sky-50 px-4 py-3">
-                  <p className="text-xs text-sky-700">추천 수면 시간</p>
-                  <p className="text-xl font-bold text-sky-900">
-                    {item.sleepStart} ~ {item.sleepEnd}
-                  </p>
+                <p className="mt-4 text-sm text-slate-600">{item.reason}</p>
+
+                <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        오늘의 근무 컨디션
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        근무 후 느낀 컨디션을 기록해 보세요.
+                      </p>
+                    </div>
+
+                    <p className="text-sm font-medium text-slate-700">
+                      현재 상태: {getConditionLabel(condition?.score)}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {[1, 2, 3, 4, 5].map((score) => {
+                      const selected = condition?.score === score
+
+                      return (
+                        <button
+                          key={score}
+                          type="button"
+                          onClick={() => updateConditionScore(item.date, score as ConditionLevel)}
+                          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                            selected
+                              ? 'bg-slate-900 text-white'
+                              : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {score}점
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <textarea
+                    value={condition?.note ?? ''}
+                    onChange={(e) => updateConditionNote(item.date, e.target.value)}
+                    placeholder="예: 야간근무 후 피로감 심함 / 낮잠 자서 괜찮았음"
+                    className="mt-4 min-h-[96px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-slate-400"
+                  />
                 </div>
               </div>
-
-              <p className="mt-4 text-sm text-slate-600">{item.reason}</p>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <div className="mt-6 flex justify-end">
