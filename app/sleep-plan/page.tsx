@@ -3,7 +3,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 
-// 로컬스토리지에서 불러올 데이터 타입 정의
 interface ScheduleData {
   hospital: string
   department: string
@@ -13,7 +12,6 @@ interface ScheduleData {
   schedule: Record<string, boolean[]>
 }
 
-// 날짜 포맷 헬퍼 함수 (YYYY-MM-DD)
 function formatDate(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -21,7 +19,6 @@ function formatDate(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-// 하루의 근무 배열(boolean[24])을 바탕으로 근무 종류(D, E, N)를 유추하는 함수
 function getShiftTypeFromHours(hours: boolean[] | undefined): 'D' | 'E' | 'N' | 'OFF' {
   if (!hours) return 'OFF'
   
@@ -30,23 +27,24 @@ function getShiftTypeFromHours(hours: boolean[] | undefined): 'D' | 'E' | 'N' | 
 
   const firstHour = activeHours[0]
 
-  // 시작 시간에 따른 단순 분류 (필요에 따라 로직 수정 가능)
   if (firstHour >= 5 && firstHour <= 10) return 'D'
   if (firstHour >= 13 && firstHour <= 17) return 'E'
   if (firstHour >= 21 || firstHour <= 2) return 'N'
   
-  return 'OFF' // 애매한 경우 일단 OFF 처리 (또는 커스텀 표시)
+  return 'OFF'
 }
 
 export default function DashboardClient() {
   const router = useRouter()
   const [data, setData] = useState<ScheduleData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  
+  // Day 근무용 수면 옵션 선택 상태
+  const [daySleepOption, setDaySleepOption] = useState<1 | 2>(1)
 
-  // 오늘 날짜 및 이번 주 날짜 계산
   const { todayStr, weekDates } = useMemo(() => {
     const today = new Date()
-    const currentDayOfWeek = today.getDay() // 0(일) ~ 6(토)
+    const currentDayOfWeek = today.getDay()
     
     const startOfWeek = new Date(today)
     startOfWeek.setDate(today.getDate() - currentDayOfWeek)
@@ -78,7 +76,7 @@ export default function DashboardClient() {
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
         <p className="text-slate-600">등록된 일정 데이터가 없습니다.</p>
         <button 
-          onClick={() => router.push('/schedule-setup')} // 스케줄 설정 페이지 경로로 변경하세요
+          onClick={() => router.push('/schedule-setup')}
           className="rounded-2xl bg-sky-600 px-5 py-3 font-semibold text-white hover:bg-sky-700"
         >
           일정 등록하러 가기
@@ -87,68 +85,89 @@ export default function DashboardClient() {
     )
   }
 
-  // 다음 근무 찾기 로직 (오늘 포함, 이후 날짜 중 근무가 있는 첫 날)
-  const sortedDates = Object.keys(data.schedule).sort()
-  let nextShiftDate = ''
-  let nextShiftHours: boolean[] = []
-  
-  for (const date of sortedDates) {
-    if (date >= todayStr) {
-      const hours = data.schedule[date]
-      if (hours.some((h) => h === true)) {
-        nextShiftDate = date
-        nextShiftHours = hours
-        break
+  // 오늘 기준 근무와 전/후 근무 파악을 위한 데이터 추출
+  const todayHours = data.schedule[todayStr]
+  const todayShift = getShiftTypeFromHours(todayHours)
+
+  // 어제와 내일 날짜 계산
+  const yesterdayObj = new Date(todayStr)
+  yesterdayObj.setDate(yesterdayObj.getDate() - 1)
+  const yesterdayStr = formatDate(yesterdayObj)
+  const yesterdayShift = getShiftTypeFromHours(data.schedule[yesterdayStr])
+
+  const tomorrowObj = new Date(todayStr)
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1)
+  const tomorrowStr = formatDate(tomorrowObj)
+  const tomorrowShift = getShiftTypeFromHours(data.schedule[tomorrowStr])
+
+  // 수면 추천 로직 분기 처리
+  const getSleepRecommendation = () => {
+    if (todayShift === 'D') {
+      return {
+        type: 'Day',
+        options: [
+          { id: 1, time: '낮잠 1.5시간 + 23:00 - 05:00', desc: '근무 끝나고 1시간 반 낮잠 후 밤에 취침' },
+          { id: 2, time: '21:30 - 05:00', desc: '근무 끝나고 활동 후 일찍 취침' }
+        ],
+        reason: '데이 근무 후 본인의 피로도에 맞는 수면 패턴을 선택해 보세요.',
+      }
+    } 
+    
+    if (todayShift === 'N') {
+      if (yesterdayShift !== 'N') {
+        return {
+          type: 'Night_First',
+          time: '19:00 - 20:30',
+          reason: '첫 번째 나이트 근무입니다. 출근 전 1시간 30분 정도 취침하여 야간 근무를 위한 에너지를 비축하세요.',
+        }
+      } else {
+        return {
+          type: 'Night_Continuous',
+          time: '10:00 - 18:00',
+          reason: '연속된 나이트 근무입니다. 퇴근 후 빛을 차단하고 10시부터 18시까지 충분한 수면을 취하세요.',
+        }
       }
     }
-  }
 
-  const nextShiftType = getShiftTypeFromHours(nextShiftHours)
-  
-  // 수면 추천 로직 (다음 근무 타입에 따른 단순화된 예시)
-  const getSleepRecommendation = (shift: 'D' | 'E' | 'N' | 'OFF') => {
-    switch (shift) {
-      case 'D':
-        return {
-          time: '22:30 - 06:00',
-          reason: '데이 근무는 이른 기상이 필요해요. 전날 밤 깊은 수면을 통해 아침 피로를 최소화하는 것이 가장 중요합니다.',
-        }
-      case 'E':
-        return {
-          time: '01:00 - 08:30',
-          reason: '이브닝 근무 후에는 뇌가 각성되어 있을 수 있어요. 퇴근 후 가벼운 스트레칭으로 긴장을 풀고 취침하는 것을 추천합니다.',
-        }
-      case 'N':
-        return {
-          time: '09:00 - 15:30',
-          reason: '나이트 근무를 앞두고 있다면, 근무 전 낮에 빛을 차단하고 수면을 취해 생체 리듬을 밤에 맞추는 앵커 수면(Anchor Sleep)이 필요해요.',
-        }
-      default:
-        return {
-          time: '23:00 - 07:00',
-          reason: '오늘은 오프입니다! 밀린 수면 부채를 해결하고 규칙적인 생체 리듬을 회복하기 좋은 날이에요.',
-        }
+    if (yesterdayShift === 'N' && todayShift === 'OFF') {
+      return {
+        type: 'Post_Night',
+        time: '09:00 - 12:00 / 익일 01:00 - 05:00',
+        reason: '나이트 근무가 끝났습니다. 오전 9시부터 12시까지 짧게 취침 후, 밤에 다시 자면서 생체 리듬을 되돌려보세요.',
+      }
+    }
+
+    if (todayShift === 'E') {
+      return {
+        type: 'Evening',
+        time: '01:00 - 08:30',
+        reason: '이브닝 근무 후 뇌가 각성되어 있을 수 있습니다. 가벼운 스트레칭으로 긴장을 풀고 취침하세요.',
+      }
+    }
+
+    return {
+      type: 'Off',
+      time: '23:00 - 07:00',
+      reason: '오늘은 오프입니다! 밀린 수면 부채를 해결하고 규칙적인 생체 리듬을 회복하세요.',
     }
   }
 
-  const sleepRec = getSleepRecommendation(nextShiftType)
+  const sleepRec = getSleepRecommendation()
   const weekdays = ['일', '월', '화', '수', '목', '금', '토']
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">
       <div className="mx-auto max-w-lg space-y-6">
         
-        {/* 헤더 섹션 */}
         <div>
           <h1 className="text-2xl font-bold text-slate-900">오늘도 수고 많으셨어요!</h1>
           <p className="mt-1 text-slate-600">최상의 컨디션을 위한 수면 플랜을 준비했습니다.</p>
         </div>
 
-        {/* 이번 주 근무 캘린더 */}
         <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
           <h2 className="text-sm font-semibold text-slate-800 mb-4">이번 주 근무</h2>
           <div className="flex justify-between">
-            {weekDates.map((dateStr, index) => {
+            {weekDates.map((dateStr) => {
               const dateObj = new Date(dateStr)
               const isToday = dateStr === todayStr
               const shiftType = getShiftTypeFromHours(data.schedule[dateStr])
@@ -176,17 +195,16 @@ export default function DashboardClient() {
           </div>
         </section>
 
-        {/* 다음 근무 정보 */}
         <section className="flex gap-4">
           <div className="flex-1 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-            <h2 className="text-sm font-semibold text-slate-500">다음 근무</h2>
+            <h2 className="text-sm font-semibold text-slate-500">오늘의 근무</h2>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold text-slate-900">
-                {nextShiftType === 'OFF' ? '휴일' : `${nextShiftType} (Day)`}
+                {todayShift === 'OFF' ? '휴일' : `${todayShift} 근무`}
               </span>
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              {nextShiftDate ? new Date(nextShiftDate).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' }) : '일정 없음'}
+              {new Date(todayStr).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
             </p>
           </div>
 
@@ -199,18 +217,49 @@ export default function DashboardClient() {
           </div>
         </section>
 
-        {/* 수면 추천 카드 */}
         <section className="rounded-3xl bg-sky-50 p-6 shadow-sm ring-1 ring-sky-100/50">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-4">
             <span className="text-xl">🌙</span>
             <h2 className="text-base font-bold text-sky-900">추천 수면 스케줄</h2>
           </div>
-          <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
-            <p className="text-center text-xl font-bold text-slate-800 tracking-wide">
-              {sleepRec.time}
-            </p>
-          </div>
-          <div className="mt-4">
+
+          {/* 데이 근무일 때 선택지 렌더링 */}
+          {sleepRec.type === 'Day' && sleepRec.options ? (
+            <div className="space-y-3 mb-4">
+              {sleepRec.options.map((opt) => (
+                <div 
+                  key={opt.id}
+                  onClick={() => setDaySleepOption(opt.id as 1 | 2)}
+                  className={`cursor-pointer rounded-2xl p-4 transition-all ${
+                    daySleepOption === opt.id 
+                      ? 'bg-white ring-2 ring-sky-500 shadow-md' 
+                      : 'bg-white/60 hover:bg-white ring-1 ring-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className={`font-bold ${daySleepOption === opt.id ? 'text-sky-700' : 'text-slate-700'}`}>
+                      {opt.time}
+                    </p>
+                    <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${
+                      daySleepOption === opt.id ? 'border-sky-500' : 'border-slate-300'
+                    }`}>
+                      {daySleepOption === opt.id && <div className="h-2 w-2 rounded-full bg-sky-500" />}
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">{opt.desc}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            // 데이 근무가 아닐 때 단일 스케줄 렌더링
+            <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm mb-4">
+              <p className="text-center text-xl font-bold text-slate-800 tracking-wide">
+                {sleepRec.time}
+              </p>
+            </div>
+          )}
+
+          <div>
             <p className="text-sm leading-relaxed text-sky-800">
               {sleepRec.reason}
             </p>
