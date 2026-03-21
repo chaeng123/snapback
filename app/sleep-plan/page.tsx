@@ -41,6 +41,12 @@ export default function DashboardClient() {
   
   // Day 근무용 수면 옵션 선택 상태
   const [daySleepOption, setDaySleepOption] = useState<1 | 2>(1)
+  // Day 근무 옵션을 최종 선택했는지 여부
+  const [isDayOptionSelected, setIsDayOptionSelected] = useState(false)
+
+  // 컨디션 평가 상태
+  const [conditionScore, setConditionScore] = useState<number>(0)
+  const [conditionMemo, setConditionMemo] = useState<string>('')
 
   const { todayStr, weekDates } = useMemo(() => {
     const today = new Date()
@@ -85,22 +91,14 @@ export default function DashboardClient() {
     )
   }
 
-  // 오늘 기준 근무와 전/후 근무 파악을 위한 데이터 추출
   const todayHours = data.schedule[todayStr]
   const todayShift = getShiftTypeFromHours(todayHours)
 
-  // 어제와 내일 날짜 계산
   const yesterdayObj = new Date(todayStr)
   yesterdayObj.setDate(yesterdayObj.getDate() - 1)
   const yesterdayStr = formatDate(yesterdayObj)
   const yesterdayShift = getShiftTypeFromHours(data.schedule[yesterdayStr])
 
-  const tomorrowObj = new Date(todayStr)
-  tomorrowObj.setDate(tomorrowObj.getDate() + 1)
-  const tomorrowStr = formatDate(tomorrowObj)
-  const tomorrowShift = getShiftTypeFromHours(data.schedule[tomorrowStr])
-
-  // 수면 추천 로직 분기 처리
   const getSleepRecommendation = () => {
     if (todayShift === 'D') {
       return {
@@ -155,15 +153,26 @@ export default function DashboardClient() {
   const sleepRec = getSleepRecommendation()
   const weekdays = ['일', '월', '화', '수', '목', '금', '토']
 
+  // 데이 근무 시 선택된 옵션의 데이터를 가져오기 위한 헬퍼 변수
+  const selectedDayOption = sleepRec.options?.find(opt => opt.id === daySleepOption)
+
+  const handleConditionSubmit = () => {
+    // 여기에 컨디션 데이터를 저장하는 로직(API 호출, 로컬스토리지 등)을 추가할 수 있습니다.
+    console.log('저장된 컨디션:', { score: conditionScore, memo: conditionMemo })
+    alert('컨디션 기록이 저장되었습니다!')
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">
       <div className="mx-auto max-w-lg space-y-6">
         
+        {/* 헤더 */}
         <div>
           <h1 className="text-2xl font-bold text-slate-900">오늘도 수고 많으셨어요!</h1>
           <p className="mt-1 text-slate-600">최상의 컨디션을 위한 수면 플랜을 준비했습니다.</p>
         </div>
 
+        {/* 이번 주 근무 */}
         <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
           <h2 className="text-sm font-semibold text-slate-800 mb-4">이번 주 근무</h2>
           <div className="flex justify-between">
@@ -195,6 +204,7 @@ export default function DashboardClient() {
           </div>
         </section>
 
+        {/* 오늘의 근무 요약 */}
         <section className="flex gap-4">
           <div className="flex-1 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
             <h2 className="text-sm font-semibold text-slate-500">오늘의 근무</h2>
@@ -217,16 +227,29 @@ export default function DashboardClient() {
           </div>
         </section>
 
+        {/* 🌙 추천 수면 스케줄 */}
         <section className="rounded-3xl bg-sky-50 p-6 shadow-sm ring-1 ring-sky-100/50">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-xl">🌙</span>
-            <h2 className="text-base font-bold text-sky-900">추천 수면 스케줄</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🌙</span>
+              <h2 className="text-base font-bold text-sky-900">추천 수면 스케줄</h2>
+            </div>
+            {/* 데이 근무이고 이미 선택을 완료한 경우 '변경하기' 버튼 노출 */}
+            {sleepRec.type === 'Day' && isDayOptionSelected && (
+              <button 
+                onClick={() => setIsDayOptionSelected(false)}
+                className="text-xs font-semibold text-sky-600 hover:text-sky-800"
+              >
+                변경하기
+              </button>
+            )}
           </div>
 
-          {/* 데이 근무일 때 선택지 렌더링 */}
-          {sleepRec.type === 'Day' && sleepRec.options ? (
+          {/* 데이 근무: 선택 전 */}
+          {sleepRec.type === 'Day' && !isDayOptionSelected ? (
             <div className="space-y-3 mb-4">
-              {sleepRec.options.map((opt) => (
+              <p className="text-sm text-sky-800 mb-2 font-medium">원하는 수면 패턴을 선택해주세요.</p>
+              {sleepRec.options?.map((opt) => (
                 <div 
                   key={opt.id}
                   onClick={() => setDaySleepOption(opt.id as 1 | 2)}
@@ -249,21 +272,83 @@ export default function DashboardClient() {
                   <p className="mt-1 text-xs text-slate-500">{opt.desc}</p>
                 </div>
               ))}
+              <button 
+                onClick={() => setIsDayOptionSelected(true)}
+                className="w-full mt-2 rounded-xl bg-sky-600 py-3 font-semibold text-white hover:bg-sky-700 transition"
+              >
+                이 스케줄로 선택하기
+              </button>
             </div>
           ) : (
-            // 데이 근무가 아닐 때 단일 스케줄 렌더링
-            <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm mb-4">
-              <p className="text-center text-xl font-bold text-slate-800 tracking-wide">
-                {sleepRec.time}
-              </p>
-            </div>
+            // 일반 근무 OR 데이 근무 선택 완료 후 단일 뷰
+            <>
+              <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm mb-4 border border-sky-100">
+                <p className="text-center text-xl font-bold text-slate-800 tracking-wide">
+                  {sleepRec.type === 'Day' ? selectedDayOption?.time : sleepRec.time}
+                </p>
+                {sleepRec.type === 'Day' && (
+                  <p className="mt-1 text-center text-xs text-slate-500">{selectedDayOption?.desc}</p>
+                )}
+              </div>
+              <div>
+                <p className="text-sm leading-relaxed text-sky-800">
+                  {sleepRec.reason}
+                </p>
+              </div>
+            </>
           )}
+        </section>
 
-          <div>
-            <p className="text-sm leading-relaxed text-sky-800">
-              {sleepRec.reason}
-            </p>
+        {/* 📝 컨디션 회고 폼 */}
+        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+          <h2 className="text-base font-bold text-slate-800 mb-2">어제 근무 컨디션은 어떠셨나요?</h2>
+          <p className="text-xs text-slate-500 mb-5">컨디션을 기록하면 더 정확한 수면 플랜을 세울 수 있어요.</p>
+
+          {/* 별점 척도 (1~5점) */}
+          <div className="flex justify-between items-center mb-6 px-2">
+            {[1, 2, 3, 4, 5].map((score) => (
+              <button
+                key={score}
+                onClick={() => setConditionScore(score)}
+                className={`flex h-12 w-12 flex-col items-center justify-center rounded-full transition-all ${
+                  conditionScore === score 
+                    ? 'bg-amber-100 text-amber-600 ring-2 ring-amber-400 scale-110 shadow-sm' 
+                    : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                }`}
+              >
+                <span className="text-lg">
+                  {score === 1 && '😫'}
+                  {score === 2 && '🙁'}
+                  {score === 3 && '😐'}
+                  {score === 4 && '🙂'}
+                  {score === 5 && '🤩'}
+                </span>
+              </button>
+            ))}
           </div>
+
+          {/* 자유 텍스트 입력 */}
+          <div className="mb-4">
+            <textarea 
+              value={conditionMemo}
+              onChange={(e) => setConditionMemo(e.target.value)}
+              placeholder="특별히 피곤했던 시간이나 이유가 있다면 적어주세요. (선택)"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 outline-none focus:border-sky-500 focus:bg-white focus:ring-1 focus:ring-sky-500 resize-none"
+              rows={3}
+            />
+          </div>
+
+          <button 
+            onClick={handleConditionSubmit}
+            disabled={conditionScore === 0}
+            className={`w-full rounded-xl py-3 font-semibold transition ${
+              conditionScore === 0 
+                ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                : 'bg-slate-800 text-white hover:bg-slate-900'
+            }`}
+          >
+            기록 저장하기
+          </button>
         </section>
         
       </div>
