@@ -43,18 +43,18 @@ function getShiftTypeFromHours(hours: boolean[] | undefined): 'D' | 'E' | 'N' | 
   const activeHours = hours.map((v, i) => (v ? i : -1)).filter((v) => v !== -1)
   if (activeHours.length === 0) return 'OFF'
 
-  // 단순히 첫 시간만 보는 것이 아니라, 해당 날짜에 각 근무의 '시작 시간대'가 포함되어 있는지 확인합니다.
-  const hasDayStart = activeHours.some(h => h >= 6 && h <= 11)      // D: 보통 7시 시작
-  const hasEveningStart = activeHours.some(h => h >= 13 && h <= 18) // E: 보통 15시 시작
-  const hasNightStart = activeHours.some(h => h >= 21)              // N: 보통 22시 시작
+  // 교대근무별로 '절대 겹치지 않는 핵심 시간대'가 포함되어 있는지 확인합니다.
+  const isDay = activeHours.includes(10)      // D: 오전 10시는 데이 근무자만 일함
+  const isEvening = activeHours.includes(18)  // E: 오후 6시(18시)는 이브닝 근무자만 일함
+  const isNight = activeHours.includes(23) || activeHours.includes(22) // N: 밤 10~11시는 나이트 근무자만 일함
 
-  // 우선순위에 따라 근무 타입을 반환합니다.
-  if (hasDayStart) return 'D'
-  if (hasEveningStart) return 'E'
-  if (hasNightStart) return 'N'
+  // 핵심 시간대에 따라 근무 타입을 확실하게 반환
+  if (isDay) return 'D'
+  if (isEvening) return 'E'
+  if (isNight) return 'N'
   
-  // 만약 위 시간대에 해당하는 근무가 없고 새벽(0~8시)만 칠해져 있다면,
-  // 전날 나이트 근무의 퇴근 시간이므로 당일 뱃지는 'OFF'로 표시합니다.
+  // 핵심 시간이 하나도 없는데 칠해져 있다면? (예: 새벽 0~7시만 칠해진 경우)
+  // 이는 전날 나이트 근무의 퇴근 시간이므로 당일 뱃지는 'OFF'로 표시합니다.
   return 'OFF'
 }
 
