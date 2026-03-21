@@ -16,7 +16,7 @@ interface ScheduleData {
   startDate: string
   endDate: string
   schedule: Record<string, boolean[]>
-  shiftTimes?: ShiftTimes // 추가된 속성
+  shiftTimes?: ShiftTimes
 }
 
 // 📅 헬퍼 함수들
@@ -63,7 +63,6 @@ export default function MonthlySchedulePage() {
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date())
   const [editingDate, setEditingDate] = useState<string | null>(null)
 
-  // 기본 시간 (데이터 없을 때의 fallback)
   const defaultTimes: ShiftTimes = {
     D: { start: 7, end: 15 },
     E: { start: 15, end: 23 },
@@ -77,16 +76,19 @@ export default function MonthlySchedulePage() {
     }
   }, [])
 
-  // 커스텀 근무 인식 함수 (사용자 설정을 바탕으로 동적 판단)
+  // ✅ 수정된 판별 로직: 출근 시간이 아닌 '근무의 정중앙 코어 시간'을 기준으로 판별하여 N 퇴근시간과의 충돌 방지
   const getShiftTypeFromHours = (hours: boolean[] | undefined, times: ShiftTimes): 'D' | 'E' | 'N' | 'OFF' | '' => {
     if (!hours) return ''
     const activeHours = hours.map((v, i) => (v ? i : -1)).filter((v) => v !== -1)
     if (activeHours.length === 0) return 'OFF'
 
-    // 사용자가 설정한 시작 시간(start)이나 중간 시간이 포함되어 있는지로 판단
-    const isDay = activeHours.includes(times.D.start) || activeHours.includes(times.D.start + 1)
-    const isEvening = activeHours.includes(times.E.start) || activeHours.includes(times.E.start + 1)
-    const isNight = activeHours.includes(times.N.start) || activeHours.includes(times.N.start + 1)
+    const dayCore = Math.floor((times.D.start + times.D.end) / 2)
+    const eveCore = Math.floor((times.E.start + times.E.end) / 2)
+    const nightCore = times.N.start
+
+    const isDay = activeHours.includes(dayCore) || activeHours.includes(dayCore + 1)
+    const isEvening = activeHours.includes(eveCore) || activeHours.includes(eveCore + 1)
+    const isNight = activeHours.includes(nightCore) || activeHours.includes(nightCore + 1)
 
     if (isDay) return 'D'
     if (isEvening) return 'E'
@@ -122,41 +124,43 @@ export default function MonthlySchedulePage() {
     setCurrentMonthDate(newDate)
   }
 
-  // ✍️ 일정 변경 로직 (사용자 커스텀 시간 반영 및 안전장치)
+  // ✅ 수정된 일정 덮어쓰기 로직
   const handleShiftChange = (preset: 'D' | 'E' | 'N' | 'OFF') => {
     if (!editingDate || !data) return
 
     const date = editingDate
     const updatedSchedule = { ...data.schedule }
     const empty = Array(24).fill(false)
-    const times = data.shiftTimes || defaultTimes // 커스텀 시간이 있으면 사용
-
-    if (!updatedSchedule[date]) updatedSchedule[date] = [...empty]
+    const times = data.shiftTimes || defaultTimes
 
     const prevDate = getPrevDateString(date)
-    // 전날 나이트 판별 (나이트 시작 시간 기준)
     const hasPrevNight = updatedSchedule[prevDate]?.[times.N.start] ?? false
 
+    // 중요: 기존의 D, E 잔여 시간을 지우기 위해 무조건 '백지 상태(empty)'에서 시작합니다.
+    // 단, 전날 N 근무의 여파(새벽 시간)는 보존해야 하므로 baseSchedule에 추가해둡니다.
+    const baseSchedule = [...empty]
+    if (hasPrevNight) {
+      for (let h = 0; h < times.N.end; h++) baseSchedule[h] = true
+    }
+
     if (preset === 'D') {
-      updatedSchedule[date] = applyRange(empty, times.D.start, times.D.end)
+      updatedSchedule[date] = applyRange(baseSchedule, times.D.start, times.D.end)
     } 
     else if (preset === 'E') {
-      updatedSchedule[date] = applyRange(empty, times.E.start, times.E.end)
+      updatedSchedule[date] = applyRange(baseSchedule, times.E.start, times.E.end)
     } 
     else if (preset === 'OFF') {
-      const offSchedule = [...empty]
-      if (hasPrevNight) {
-        for (let h = 0; h < times.N.end; h++) offSchedule[h] = true
-      }
-      updatedSchedule[date] = offSchedule
+      updatedSchedule[date] = baseSchedule
     } 
     else if (preset === 'N') {
-      const currentDaySchedule = [...updatedSchedule[date]]
-      updatedSchedule[date] = applyRange(currentDaySchedule, times.N.start, 24)
+      updatedSchedule[date] = applyRange(baseSchedule, times.N.start, 24)
 
+      // 익일 새벽 시간 추가 처리
       const nextDate = getNextDateString(date)
       if (!updatedSchedule[nextDate]) updatedSchedule[nextDate] = [...empty]
-      updatedSchedule[nextDate] = applyRange(updatedSchedule[nextDate], 0, times.N.end)
+      for (let h = 0; h < times.N.end; h++) {
+        updatedSchedule[nextDate][h] = true
+      }
     }
 
     const newData = { ...data, schedule: updatedSchedule }
