@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 
 interface ScheduleData {
   hospital: string
@@ -36,15 +36,15 @@ function getShiftTypeFromHours(hours: boolean[] | undefined): 'D' | 'E' | 'N' | 
 
 export default function DashboardClient() {
   const router = useRouter()
+  // 현재 경로를 가져와서 하단 바 활성화 상태 표시에 사용합니다.
+  const pathname = usePathname()
+  
   const [data, setData] = useState<ScheduleData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   
-  // Day 근무용 수면 옵션 선택 상태
   const [daySleepOption, setDaySleepOption] = useState<1 | 2>(1)
-  // Day 근무 옵션을 최종 선택했는지 여부
   const [isDayOptionSelected, setIsDayOptionSelected] = useState(false)
 
-  // 컨디션 평가 상태
   const [conditionScore, setConditionScore] = useState<number>(0)
   const [conditionMemo, setConditionMemo] = useState<string>('')
 
@@ -153,17 +153,16 @@ export default function DashboardClient() {
   const sleepRec = getSleepRecommendation()
   const weekdays = ['일', '월', '화', '수', '목', '금', '토']
 
-  // 데이 근무 시 선택된 옵션의 데이터를 가져오기 위한 헬퍼 변수
   const selectedDayOption = sleepRec.options?.find(opt => opt.id === daySleepOption)
 
   const handleConditionSubmit = () => {
-    // 여기에 컨디션 데이터를 저장하는 로직(API 호출, 로컬스토리지 등)을 추가할 수 있습니다.
     console.log('저장된 컨디션:', { score: conditionScore, memo: conditionMemo })
     alert('컨디션 기록이 저장되었습니다!')
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8">
+    // 하단 바 공간 확보를 위해 pb-24 추가
+    <main className="min-h-screen bg-slate-50 px-4 pt-8 pb-24 relative">
       <div className="mx-auto max-w-lg space-y-6">
         
         {/* 헤더 */}
@@ -234,7 +233,6 @@ export default function DashboardClient() {
               <span className="text-xl">🌙</span>
               <h2 className="text-base font-bold text-sky-900">추천 수면 스케줄</h2>
             </div>
-            {/* 데이 근무이고 이미 선택을 완료한 경우 '변경하기' 버튼 노출 */}
             {sleepRec.type === 'Day' && isDayOptionSelected && (
               <button 
                 onClick={() => setIsDayOptionSelected(false)}
@@ -245,7 +243,6 @@ export default function DashboardClient() {
             )}
           </div>
 
-          {/* 데이 근무: 선택 전 */}
           {sleepRec.type === 'Day' && !isDayOptionSelected ? (
             <div className="space-y-3 mb-4">
               <p className="text-sm text-sky-800 mb-2 font-medium">원하는 수면 패턴을 선택해주세요.</p>
@@ -280,7 +277,6 @@ export default function DashboardClient() {
               </button>
             </div>
           ) : (
-            // 일반 근무 OR 데이 근무 선택 완료 후 단일 뷰
             <>
               <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm mb-4 border border-sky-100">
                 <p className="text-center text-xl font-bold text-slate-800 tracking-wide">
@@ -304,7 +300,6 @@ export default function DashboardClient() {
           <h2 className="text-base font-bold text-slate-800 mb-2">어제 근무 컨디션은 어떠셨나요?</h2>
           <p className="text-xs text-slate-500 mb-5">컨디션을 기록하면 더 정확한 수면 플랜을 세울 수 있어요.</p>
 
-          {/* 별점 척도 (1~5점) */}
           <div className="flex justify-between items-center mb-6 px-2">
             {[1, 2, 3, 4, 5].map((score) => (
               <button
@@ -327,7 +322,6 @@ export default function DashboardClient() {
             ))}
           </div>
 
-          {/* 자유 텍스트 입력 */}
           <div className="mb-4">
             <textarea 
               value={conditionMemo}
@@ -352,6 +346,44 @@ export default function DashboardClient() {
         </section>
         
       </div>
+
+      {/* 📱 하단 네비게이션 바 */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] pb-safe">
+        <div className="mx-auto max-w-lg flex justify-around items-center h-16 px-4">
+          
+          <button 
+            onClick={() => router.push('/sleep-plan')} 
+            className={`flex flex-col items-center gap-1 w-16 transition-colors ${
+              pathname === '/sleep-plan' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <span className="text-xl leading-none">🏠</span>
+            <span className="text-[10px] font-medium">홈</span>
+          </button>
+
+          <button 
+            onClick={() => router.push('/alarms')} 
+            className={`flex flex-col items-center gap-1 w-16 transition-colors ${
+              pathname === '/alarms' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <span className="text-xl leading-none">⏰</span>
+            <span className="text-[10px] font-medium">알람</span>
+          </button>
+
+          <button 
+            onClick={() => router.push('/community')} 
+            className={`flex flex-col items-center gap-1 w-16 transition-colors ${
+              pathname === '/community' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <span className="text-xl leading-none">💬</span>
+            <span className="text-[10px] font-medium">커뮤니티</span>
+          </button>
+
+        </div>
+      </nav>
+
     </main>
   )
 }
