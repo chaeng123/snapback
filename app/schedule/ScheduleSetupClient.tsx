@@ -86,8 +86,8 @@ function getSummaryLabel(hours: boolean[]) {
   const first = activeIndices[0]
   const last = activeIndices[activeIndices.length - 1] + 1
 
-  if (first === 0 && last <= 9) return `~ ${String(last).padStart(2, '0')}:00 퇴근`
-  if (last === 24 && first >= 20) return `${String(first).padStart(2, '0')}:00 출근 ~`
+  if (first === 0 && last <= 9) return `~ ${String(last).padStart(2, '0')}:00`
+  if (last === 24 && first >= 20) return `${String(first).padStart(2, '0')}:00 -`
 
   return `${String(first).padStart(2, '0')}:00 - ${String(last % 24).padStart(2, '0')}:00`
 }
@@ -155,7 +155,7 @@ export default function ScheduleSetupClient() {
         console.log(`[디버그] N 근무 클릭됨 - 당일: ${date}`)
         
         // 1. 당일 22:00 ~ 24:00 설정
-        copied[date] = applyRange(empty, 22, 24)
+        copied[date] = applyRange(empty, 23, 24)
 
         // 2. 익일 날짜 계산 및 적용
         const nextDate = getNextDateString(date)
