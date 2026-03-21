@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 
-type SavedPayload = {
+// 로컬스토리지에서 불러올 데이터 타입 정의
+interface ScheduleData {
   hospital: string
   department: string
   shiftType: string
@@ -12,389 +13,210 @@ type SavedPayload = {
   schedule: Record<string, boolean[]>
 }
 
-type SleepRecommendation = {
-  date: string
-  workLabel: string
-  sleepStart: string
-  sleepEnd: string
-  reason: string
+// 날짜 포맷 헬퍼 함수 (YYYY-MM-DD)
+function formatDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-type ConditionLevel = 1 | 2 | 3 | 4 | 5
+// 하루의 근무 배열(boolean[24])을 바탕으로 근무 종류(D, E, N)를 유추하는 함수
+function getShiftTypeFromHours(hours: boolean[] | undefined): 'D' | 'E' | 'N' | 'OFF' {
+  if (!hours) return 'OFF'
+  
+  const activeHours = hours.map((v, i) => (v ? i : -1)).filter((v) => v !== -1)
+  if (activeHours.length === 0) return 'OFF'
 
-type ConditionRecord = {
-  score: ConditionLevel
-  note: string
+  const firstHour = activeHours[0]
+
+  // 시작 시간에 따른 단순 분류 (필요에 따라 로직 수정 가능)
+  if (firstHour >= 5 && firstHour <= 10) return 'D'
+  if (firstHour >= 13 && firstHour <= 17) return 'E'
+  if (firstHour >= 21 || firstHour <= 2) return 'N'
+  
+  return 'OFF' // 애매한 경우 일단 OFF 처리 (또는 커스텀 표시)
 }
 
-type ConditionMap = Record<string, ConditionRecord>
-
-function parseLocalDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year, month - 1, day)
-}
-
-function formatDisplayDate(dateString: string) {
-  const date = parseLocalDate(dateString)
-  const weekdays = ['일', '월', '화', '수', '목', '금', '토']
-  return `${date.getMonth() + 1}/${date.getDate()} (${weekdays[date.getDay()]})`
-}
-
-function getActiveHours(hours: boolean[]) {
-  return hours
-    .map((v, i) => (v ? i : -1))
-    .filter((v) => v !== -1)
-}
-
-function detectShift(hours: boolean[]) {
-  const active = getActiveHours(hours)
-
-  if (active.length === 0) {
-    return {
-      type: 'OFF',
-      startHour: null,
-      endHour: null,
-      label: '휴무',
-    }
-  }
-
-  const first = active[0]
-  const hasMidnight = hours[23] && hours[0]
-
-  if (hasMidnight) {
-    let end = 0
-    while (end < 24 && hours[end]) end++
-
-    let start = 23
-    while (start >= 0 && hours[start]) start--
-    start += 1
-
-    return {
-      type: 'NIGHT',
-      startHour: start,
-      endHour: end,
-      label: `${String(start).padStart(2, '0')}:00 - ${String(end).padStart(2, '0')}:00`,
-    }
-  }
-
-  const last = active[active.length - 1] + 1
-
-  if (first <= 8 && last <= 18) {
-    return {
-      type: 'DAY',
-      startHour: first,
-      endHour: last,
-      label: `${String(first).padStart(2, '0')}:00 - ${String(last).padStart(2, '0')}:00`,
-    }
-  }
-
-  if (first >= 12 && last <= 24) {
-    return {
-      type: 'EVENING',
-      startHour: first,
-      endHour: last,
-      label: `${String(first).padStart(2, '0')}:00 - ${String(last % 24).padStart(2, '0')}:00`,
-    }
-  }
-
-  return {
-    type: 'CUSTOM',
-    startHour: first,
-    endHour: last % 24,
-    label: `${String(first).padStart(2, '0')}:00 - ${String(last % 24).padStart(2, '0')}:00`,
-  }
-}
-
-function recommendSleep(hours: boolean[]): Omit<SleepRecommendation, 'date'> {
-  const shift = detectShift(hours)
-
-  if (shift.type === 'OFF') {
-    return {
-      workLabel: shift.label,
-      sleepStart: '23:00',
-      sleepEnd: '07:00',
-      reason: '휴무일 기준으로 야간 중심 수면 8시간을 추천해요.',
-    }
-  }
-
-  if (shift.type === 'DAY') {
-    return {
-      workLabel: shift.label,
-      sleepStart: '22:30',
-      sleepEnd: '06:00',
-      reason: '이른 출근을 고려해 근무 전 충분한 야간 수면을 추천해요.',
-    }
-  }
-
-  if (shift.type === 'EVENING') {
-    return {
-      workLabel: shift.label,
-      sleepStart: '00:30',
-      sleepEnd: '08:30',
-      reason: '늦은 퇴근 후 회복과 오전 수면 확보를 고려한 시간이에요.',
-    }
-  }
-
-  if (shift.type === 'NIGHT') {
-    return {
-      workLabel: shift.label,
-      sleepStart: '08:30',
-      sleepEnd: '16:00',
-      reason: '야간근무 직후 낮 수면으로 회복할 수 있도록 추천해요.',
-    }
-  }
-
-  return {
-    workLabel: shift.label,
-    sleepStart: '23:30',
-    sleepEnd: '07:00',
-    reason: '불규칙 근무로 판단되어 우선 기본 회복 수면 시간을 제안해요.',
-  }
-}
-
-function getConditionLabel(score?: number) {
-  switch (score) {
-    case 1:
-      return '매우 나쁨'
-    case 2:
-      return '나쁨'
-    case 3:
-      return '보통'
-    case 4:
-      return '좋음'
-    case 5:
-      return '매우 좋음'
-    default:
-      return '미입력'
-  }
-}
-
-export default function SleepPlanPage() {
+export default function DashboardClient() {
   const router = useRouter()
-  const [data, setData] = useState<SavedPayload | null>(null)
-  const [conditions, setConditions] = useState<ConditionMap>({})
+  const [data, setData] = useState<ScheduleData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    const raw = localStorage.getItem('sleep-onboarding-schedule')
-    if (!raw) {
-      router.push('/onboarding')
-      return
+  // 오늘 날짜 및 이번 주 날짜 계산
+  const { todayStr, weekDates } = useMemo(() => {
+    const today = new Date()
+    const currentDayOfWeek = today.getDay() // 0(일) ~ 6(토)
+    
+    const startOfWeek = new Date(today)
+    startOfWeek.setDate(today.getDate() - currentDayOfWeek)
+
+    const dates = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek)
+      d.setDate(startOfWeek.getDate() + i)
+      dates.push(formatDate(d))
     }
 
-    try {
-      const parsed = JSON.parse(raw) as SavedPayload
-      setData(parsed)
-    } catch {
-      router.push('/onboarding')
-    }
-  }, [router])
-
-  useEffect(() => {
-    const rawConditions = localStorage.getItem('sleep-condition-records')
-    if (!rawConditions) return
-
-    try {
-      const parsed = JSON.parse(rawConditions) as ConditionMap
-      setConditions(parsed)
-    } catch {
-      setConditions({})
-    }
+    return { todayStr: formatDate(today), weekDates: dates }
   }, [])
 
-  const recommendations = useMemo(() => {
-    if (!data) return []
+  useEffect(() => {
+    const saved = localStorage.getItem('sleep-onboarding-schedule')
+    if (saved) {
+      setData(JSON.parse(saved))
+    }
+    setIsLoading(false)
+  }, [])
 
-    return Object.entries(data.schedule).map(([date, hours]) => {
-      const rec = recommendSleep(hours)
-      return {
-        date,
-        ...rec,
-      }
-    })
-  }, [data])
-
-  const averageSleepHours = useMemo(() => {
-    if (recommendations.length === 0) return '0.0'
-
-    const total = recommendations.reduce((sum, item) => {
-      const [sh, sm] = item.sleepStart.split(':').map(Number)
-      const [eh, em] = item.sleepEnd.split(':').map(Number)
-
-      const start = sh + sm / 60
-      let end = eh + em / 60
-      if (end <= start) end += 24
-
-      return sum + (end - start)
-    }, 0)
-
-    return (total / recommendations.length).toFixed(1)
-  }, [recommendations])
-
-  const averageCondition = useMemo(() => {
-    const values = Object.values(conditions)
-      .map((item) => item.score)
-      .filter(Boolean)
-
-    if (values.length === 0) return null
-
-    const avg = values.reduce((a, b) => a + b, 0) / values.length
-    return avg.toFixed(1)
-  }, [conditions])
-
-  function updateConditionScore(date: string, score: ConditionLevel) {
-    setConditions((prev) => {
-      const next = {
-        ...prev,
-        [date]: {
-          score,
-          note: prev[date]?.note ?? '',
-        },
-      }
-
-      localStorage.setItem('sleep-condition-records', JSON.stringify(next))
-      return next
-    })
+  if (isLoading) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">불러오는 중...</div>
   }
 
-  function updateConditionNote(date: string, note: string) {
-    setConditions((prev) => {
-      const next = {
-        ...prev,
-        [date]: {
-          score: prev[date]?.score ?? 3,
-          note,
-        },
-      }
-
-      localStorage.setItem('sleep-condition-records', JSON.stringify(next))
-      return next
-    })
+  if (!data) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
+        <p className="text-slate-600">등록된 일정 데이터가 없습니다.</p>
+        <button 
+          onClick={() => router.push('/schedule-setup')} // 스케줄 설정 페이지 경로로 변경하세요
+          className="rounded-2xl bg-sky-600 px-5 py-3 font-semibold text-white hover:bg-sky-700"
+        >
+          일정 등록하러 가기
+        </button>
+      </div>
+    )
   }
 
-  if (!data) return null
+  // 다음 근무 찾기 로직 (오늘 포함, 이후 날짜 중 근무가 있는 첫 날)
+  const sortedDates = Object.keys(data.schedule).sort()
+  let nextShiftDate = ''
+  let nextShiftHours: boolean[] = []
+  
+  for (const date of sortedDates) {
+    if (date >= todayStr) {
+      const hours = data.schedule[date]
+      if (hours.some((h) => h === true)) {
+        nextShiftDate = date
+        nextShiftHours = hours
+        break
+      }
+    }
+  }
+
+  const nextShiftType = getShiftTypeFromHours(nextShiftHours)
+  
+  // 수면 추천 로직 (다음 근무 타입에 따른 단순화된 예시)
+  const getSleepRecommendation = (shift: 'D' | 'E' | 'N' | 'OFF') => {
+    switch (shift) {
+      case 'D':
+        return {
+          time: '22:30 - 06:00',
+          reason: '데이 근무는 이른 기상이 필요해요. 전날 밤 깊은 수면을 통해 아침 피로를 최소화하는 것이 가장 중요합니다.',
+        }
+      case 'E':
+        return {
+          time: '01:00 - 08:30',
+          reason: '이브닝 근무 후에는 뇌가 각성되어 있을 수 있어요. 퇴근 후 가벼운 스트레칭으로 긴장을 풀고 취침하는 것을 추천합니다.',
+        }
+      case 'N':
+        return {
+          time: '09:00 - 15:30',
+          reason: '나이트 근무를 앞두고 있다면, 근무 전 낮에 빛을 차단하고 수면을 취해 생체 리듬을 밤에 맞추는 앵커 수면(Anchor Sleep)이 필요해요.',
+        }
+      default:
+        return {
+          time: '23:00 - 07:00',
+          reason: '오늘은 오프입니다! 밀린 수면 부채를 해결하고 규칙적인 생체 리듬을 회복하기 좋은 날이에요.',
+        }
+    }
+  }
+
+  const sleepRec = getSleepRecommendation(nextShiftType)
+  const weekdays = ['일', '월', '화', '수', '목', '금', '토']
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6">
-      <div className="mx-auto max-w-5xl">
-        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
-          <p className="text-sm font-medium text-sky-600">추천 수면 시간</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">
-            입력한 근무표를 바탕으로 수면 시간을 추천했어요
-          </h1>
-          <p className="mt-2 text-sm text-slate-600">
-            {data.hospital || '기관 미입력'} · {data.department || '부서 미입력'} · {data.shiftType}
-          </p>
+    <main className="min-h-screen bg-slate-50 px-4 py-8">
+      <div className="mx-auto max-w-lg space-y-6">
+        
+        {/* 헤더 섹션 */}
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">오늘도 수고 많으셨어요!</h1>
+          <p className="mt-1 text-slate-600">최상의 컨디션을 위한 수면 플랜을 준비했습니다.</p>
+        </div>
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-xs text-slate-500">등록 기간</p>
-              <p className="text-lg font-bold text-slate-900">
-                {data.startDate} ~ {data.endDate}
-              </p>
+        {/* 이번 주 근무 캘린더 */}
+        <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">이번 주 근무</h2>
+          <div className="flex justify-between">
+            {weekDates.map((dateStr, index) => {
+              const dateObj = new Date(dateStr)
+              const isToday = dateStr === todayStr
+              const shiftType = getShiftTypeFromHours(data.schedule[dateStr])
+              
+              return (
+                <div key={dateStr} className="flex flex-col items-center gap-2">
+                  <span className={`text-xs font-medium ${isToday ? 'text-sky-600' : 'text-slate-400'}`}>
+                    {weekdays[dateObj.getDay()]}
+                  </span>
+                  <div className={`flex h-10 w-10 flex-col items-center justify-center rounded-full ${
+                    isToday ? 'bg-sky-600 text-white shadow-md' : 'bg-slate-50 text-slate-700'
+                  }`}>
+                    <span className="text-sm font-bold">{dateObj.getDate()}</span>
+                  </div>
+                  <span className={`text-[11px] font-bold ${
+                    shiftType === 'D' ? 'text-emerald-500' :
+                    shiftType === 'E' ? 'text-amber-500' :
+                    shiftType === 'N' ? 'text-indigo-500' : 'text-slate-300'
+                  }`}>
+                    {shiftType}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
+        {/* 다음 근무 정보 */}
+        <section className="flex gap-4">
+          <div className="flex-1 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+            <h2 className="text-sm font-semibold text-slate-500">다음 근무</h2>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-slate-900">
+                {nextShiftType === 'OFF' ? '휴일' : `${nextShiftType} (Day)`}
+              </span>
             </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {nextShiftDate ? new Date(nextShiftDate).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' }) : '일정 없음'}
+            </p>
+          </div>
 
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-xs text-slate-500">평균 추천 수면 시간</p>
-              <p className="text-lg font-bold text-slate-900">
-                {averageSleepHours}시간
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-xs text-slate-500">평균 컨디션</p>
-              <p className="text-lg font-bold text-slate-900">
-                {averageCondition ? `${averageCondition} / 5` : '아직 없음'}
-              </p>
+          <div className="flex-1 rounded-3xl bg-slate-800 p-5 shadow-sm text-white">
+            <h2 className="text-sm font-semibold text-slate-400">목표 수면 시간</h2>
+            <div className="mt-2">
+              <span className="text-2xl font-bold text-sky-400">7.5</span>
+              <span className="ml-1 text-sm text-slate-300">시간</span>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="mt-6 space-y-4">
-          {recommendations.map((item) => {
-            const condition = conditions[item.date]
-
-            return (
-              <div
-                key={item.date}
-                className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100"
-              >
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-lg font-bold text-slate-900">
-                      {formatDisplayDate(item.date)}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      근무시간: {item.workLabel}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-sky-50 px-4 py-3">
-                    <p className="text-xs text-sky-700">추천 수면 시간</p>
-                    <p className="text-xl font-bold text-sky-900">
-                      {item.sleepStart} ~ {item.sleepEnd}
-                    </p>
-                  </div>
-                </div>
-
-                <p className="mt-4 text-sm text-slate-600">{item.reason}</p>
-
-                <div className="mt-5 rounded-2xl bg-slate-50 p-4">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">
-                        오늘의 근무 컨디션
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        근무 후 느낀 컨디션을 기록해 보세요.
-                      </p>
-                    </div>
-
-                    <p className="text-sm font-medium text-slate-700">
-                      현재 상태: {getConditionLabel(condition?.score)}
-                    </p>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {[1, 2, 3, 4, 5].map((score) => {
-                      const selected = condition?.score === score
-
-                      return (
-                        <button
-                          key={score}
-                          type="button"
-                          onClick={() => updateConditionScore(item.date, score as ConditionLevel)}
-                          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                            selected
-                              ? 'bg-slate-900 text-white'
-                              : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {score}점
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  <textarea
-                    value={condition?.note ?? ''}
-                    onChange={(e) => updateConditionNote(item.date, e.target.value)}
-                    placeholder="예: 야간근무 후 피로감 심함 / 낮잠 자서 괜찮았음"
-                    className="mt-4 min-h-[96px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-slate-400"
-                  />
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        <div className="mt-6 flex justify-end">
-          <button
-            onClick={() => router.push('/schedule')}
-            className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white"
-          >
-            일정 다시 수정하기
-          </button>
-        </div>
+        {/* 수면 추천 카드 */}
+        <section className="rounded-3xl bg-sky-50 p-6 shadow-sm ring-1 ring-sky-100/50">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xl">🌙</span>
+            <h2 className="text-base font-bold text-sky-900">추천 수면 스케줄</h2>
+          </div>
+          <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
+            <p className="text-center text-xl font-bold text-slate-800 tracking-wide">
+              {sleepRec.time}
+            </p>
+          </div>
+          <div className="mt-4">
+            <p className="text-sm leading-relaxed text-sky-800">
+              {sleepRec.reason}
+            </p>
+          </div>
+        </section>
+        
       </div>
     </main>
   )
