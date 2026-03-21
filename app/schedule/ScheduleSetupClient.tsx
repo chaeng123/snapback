@@ -40,7 +40,6 @@ function getDateRange(start: string, end: string) {
   return dates
 }
 
-// ✅ 추가된 함수: 다음 날짜 문자열 반환 (N 근무 처리를 위해 사용)
 function getNextDateString(dateStr: string) {
   const date = parseLocalDate(dateStr)
   date.setDate(date.getDate() + 1)
@@ -80,20 +79,17 @@ function applyRange(hours: boolean[], startHour: number, endHour: number) {
 function getSummaryLabel(hours: boolean[]) {
   const activeIndices = hours
     .map((v, i) => (v ? i : -1))
-    .filter((v) => v !== -1);
+    .filter((v) => v !== -1)
 
-  if (activeIndices.length === 0) return 'OFF';
+  if (activeIndices.length === 0) return 'OFF'
 
-  // 연속된 구간인지 확인 (간단하게 첫 시간과 마지막 시간 추출)
-  const first = activeIndices[0];
-  const last = activeIndices[activeIndices.length - 1] + 1;
+  const first = activeIndices[0]
+  const last = activeIndices[activeIndices.length - 1] + 1
 
-  // N 근무의 새벽 파트인지 확인 (0시부터 시작하고 짧은 경우)
-  if (first === 0 && last <= 9) return `~ ${String(last).padStart(2, '0')}:00 퇴근`;
-  // N 근무의 밤 파트인지 확인 (밤 늦게 시작해서 24시까지 꽉 찬 경우)
-  if (last === 24 && first >= 20) return `${String(first).padStart(2, '0')}:00 출근 ~`;
+  if (first === 0 && last <= 9) return `~ ${String(last).padStart(2, '0')}:00 퇴근`
+  if (last === 24 && first >= 20) return `${String(first).padStart(2, '0')}:00 출근 ~`
 
-  return `${String(first).padStart(2, '0')}:00 - ${String(last % 24).padStart(2, '0')}:00`;
+  return `${String(first).padStart(2, '0')}:00 - ${String(last % 24).padStart(2, '0')}:00`
 }
 
 export default function ScheduleSetupClient() {
@@ -147,34 +143,40 @@ export default function ScheduleSetupClient() {
     setPaintMode(null)
   }
 
-  // ✅ 변경된 부분: N 근무의 교차 일자(Cross-day) 처리 적용
   const applyPreset = (date: string, preset: 'D' | 'E' | 'N' | 'OFF') => {
-  setSchedule((prev) => {
-    const newSchedule = { ...prev };
-    const empty = Array(24).fill(false);
+    setSchedule((prev) => {
+      const copied = { ...prev }
+      const empty = Array(24).fill(false)
 
-    if (preset === 'D') newSchedule[date] = applyRange(empty, 7, 15);
-    else if (preset === 'E') newSchedule[date] = applyRange(empty, 15, 23);
-    else if (preset === 'OFF') newSchedule[date] = empty;
-    else if (preset === 'N') {
-      // [당일] 밤 10시(22:00) ~ 밤 12시(24:00) 설정
-      const currentDay = [...empty];
-      for (let h = 22; h < 24; h++) currentDay[h] = true;
-      newSchedule[date] = currentDay;
+      if (preset === 'D') copied[date] = applyRange(empty, 7, 15)
+      else if (preset === 'E') copied[date] = applyRange(empty, 15, 23)
+      else if (preset === 'OFF') copied[date] = empty
+      else if (preset === 'N') {
+        console.log(`[디버그] N 근무 클릭됨 - 당일: ${date}`)
+        
+        // 1. 당일 22:00 ~ 24:00 설정
+        copied[date] = applyRange(empty, 22, 24)
 
-      // [익일] 새벽 0시(00:00) ~ 아침 8시(08:00) 설정
-      const nextDate = getNextDateString(date);
-      if (newSchedule[nextDate] !== undefined) {
-        const nextDay = [...newSchedule[nextDate]];
-        // 기존 일정이 있더라도 새벽 시간대는 N 근무(0~8시)로 덮어씌움
-        for (let h = 0; h < 8; h++) nextDay[h] = true;
-        newSchedule[nextDate] = nextDay;
+        // 2. 익일 날짜 계산 및 적용
+        const nextDate = getNextDateString(date)
+        console.log(`[디버그] 익일 날짜 계산됨: ${nextDate}`)
+
+        if (copied[nextDate] !== undefined) {
+          console.log(`[디버그] 익일 데이터가 존재하여 새벽 0~8시를 칠합니다.`)
+          const nextDaySchedule = [...copied[nextDate]]
+          for (let h = 0; h < 8; h++) {
+            nextDaySchedule[h] = true
+          }
+          copied[nextDate] = nextDaySchedule
+        } else {
+          console.log(`[디버그] 주의: ${nextDate}가 캘린더 범위에 없어 새벽 근무를 표시할 수 없습니다.`)
+        }
       }
-    }
 
-    return newSchedule;
-  });
-};
+      return copied
+    })
+  }
+
   const totalWorkedHours = Object.values(schedule).reduce((sum, hours) => {
     return sum + hours.filter(Boolean).length
   }, 0)
