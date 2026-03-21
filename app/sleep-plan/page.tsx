@@ -350,37 +350,23 @@ export default function DashboardClient() {
       {/* 📱 하단 네비게이션 바 */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] pb-safe">
         <div className="mx-auto max-w-lg flex justify-around items-center h-16 px-4">
-          
-          <button 
-            onClick={() => router.push('/sleep-plan')} 
-            className={`flex flex-col items-center gap-1 w-16 transition-colors ${
-              pathname === '/sleep-plan' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'
-            }`}
-          >
+          <button onClick={() => router.push('/sleep-plan')} className={`flex flex-col items-center gap-1 w-16 transition-colors ${pathname === '/sleep-plan' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}>
             <span className="text-xl leading-none">🏠</span>
             <span className="text-[10px] font-medium">홈</span>
           </button>
-
-          <button 
-            onClick={() => router.push('/alarms')} 
-            className={`flex flex-col items-center gap-1 w-16 transition-colors ${
-              pathname === '/alarms' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'
-            }`}
-          >
+          <button onClick={() => router.push('/monthlyschedule')} className={`flex flex-col items-center gap-1 w-16 transition-colors ${pathname === '/monthlyschedule' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}>
+            <span className="text-xl leading-none">📅</span>
+            <span className="text-[10px] font-medium">월간</span>
+          </button>
+          <button onClick={() => router.push('/alarms')} className={`flex flex-col items-center gap-1 w-16 transition-colors ${pathname === '/alarms' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}>
             <span className="text-xl leading-none">⏰</span>
             <span className="text-[10px] font-medium">알람</span>
           </button>
-
-          <button 
-            onClick={() => router.push('/community')} 
-            className={`flex flex-col items-center gap-1 w-16 transition-colors ${
-              pathname === '/community' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'
-            }`}
-          >
+          <button onClick={() => router.push('/community')} className={`flex flex-col items-center gap-1 w-16 transition-colors ${pathname === '/community' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}>
             <span className="text-xl leading-none">💬</span>
             <span className="text-[10px] font-medium">커뮤니티</span>
           </button>
-
+          
         </div>
       </nav>
 
