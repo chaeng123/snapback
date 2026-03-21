@@ -108,7 +108,6 @@ export default function OnboardingPage() {
 
     for (const date of sortedDates) {
       const shift = assignedShifts[date]
-      
       if (!finalSchedule[date]) finalSchedule[date] = Array(24).fill(false)
 
       if (shift === 'D') {
@@ -117,7 +116,6 @@ export default function OnboardingPage() {
         finalSchedule[date] = applyRange(finalSchedule[date], shiftTimes.E.start, shiftTimes.E.end)
       } else if (shift === 'N') {
         finalSchedule[date] = applyRange(finalSchedule[date], shiftTimes.N.start, 24)
-        
         const nextDate = getNextDateString(date)
         if (!finalSchedule[nextDate]) finalSchedule[nextDate] = Array(24).fill(false)
         finalSchedule[nextDate] = applyRange(finalSchedule[nextDate], 0, shiftTimes.N.end)
@@ -131,10 +129,12 @@ export default function OnboardingPage() {
       startDate: sortedDates[0],
       endDate: sortedDates[sortedDates.length - 1],
       schedule: finalSchedule,
+      // ✅ 사용자 커스텀 시간대 정보 추가 저장
+      shiftTimes: shiftTimes, 
     }
 
     localStorage.setItem('sleep-onboarding-schedule', JSON.stringify(payload))
-    router.push('/sleep-plan') // 메인 대시보드로 이동
+    router.push('/sleep-plan') 
   }
 
   const updateShiftTime = (shift: 'D'|'E'|'N', type: 'start'|'end', value: number) => {
