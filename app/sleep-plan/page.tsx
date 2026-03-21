@@ -19,18 +19,24 @@ function formatDate(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-function getShiftTypeFromHours(hours: boolean[] | undefined): 'D' | 'E' | 'N' | 'OFF' {
-  if (!hours) return 'OFF'
+function getShiftTypeFromHours(hours: boolean[] | undefined): 'D' | 'E' | 'N' | 'OFF' | '' {
+  if (!hours) return ''
   
   const activeHours = hours.map((v, i) => (v ? i : -1)).filter((v) => v !== -1)
   if (activeHours.length === 0) return 'OFF'
 
-  const firstHour = activeHours[0]
+  // 단순히 첫 시간만 보는 것이 아니라, 해당 날짜에 각 근무의 '시작 시간대'가 포함되어 있는지 확인합니다.
+  const hasDayStart = activeHours.some(h => h >= 6 && h <= 11)      // D: 보통 7시 시작
+  const hasEveningStart = activeHours.some(h => h >= 13 && h <= 18) // E: 보통 15시 시작
+  const hasNightStart = activeHours.some(h => h >= 21)              // N: 보통 22시 시작
 
-  if (firstHour >= 5 && firstHour <= 10) return 'D'
-  if (firstHour >= 13 && firstHour <= 17) return 'E'
-  if (firstHour >= 21 || firstHour <= 2) return 'N'
+  // 우선순위에 따라 근무 타입을 반환합니다.
+  if (hasDayStart) return 'D'
+  if (hasEveningStart) return 'E'
+  if (hasNightStart) return 'N'
   
+  // 만약 위 시간대에 해당하는 근무가 없고 새벽(0~8시)만 칠해져 있다면,
+  // 전날 나이트 근무의 퇴근 시간이므로 당일 뱃지는 'OFF'로 표시합니다.
   return 'OFF'
 }
 
@@ -366,7 +372,7 @@ export default function DashboardClient() {
             <span className="text-xl leading-none">💬</span>
             <span className="text-[10px] font-medium">커뮤니티</span>
           </button>
-          
+
         </div>
       </nav>
 
