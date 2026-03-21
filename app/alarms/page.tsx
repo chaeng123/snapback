@@ -95,6 +95,10 @@ export default function AlarmsPage() {
             <span className="text-xl leading-none">🏠</span>
             <span className="text-[10px] font-medium">홈</span>
           </button>
+          <button onClick={() => router.push('/monthlyschedule')} className={`flex flex-col items-center gap-1 w-16 transition-colors ${pathname === '/monthlyschedule' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}>
+            <span className="text-xl leading-none">📅</span>
+            <span className="text-[10px] font-medium">월간</span>
+          </button>
           <button onClick={() => router.push('/alarms')} className={`flex flex-col items-center gap-1 w-16 transition-colors ${pathname === '/alarms' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}>
             <span className="text-xl leading-none">⏰</span>
             <span className="text-[10px] font-medium">알람</span>
@@ -103,8 +107,10 @@ export default function AlarmsPage() {
             <span className="text-xl leading-none">💬</span>
             <span className="text-[10px] font-medium">커뮤니티</span>
           </button>
+
         </div>
       </nav>
+
     </main>
   )
 }

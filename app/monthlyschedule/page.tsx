@@ -277,8 +277,10 @@ export default function MonthlySchedulePage() {
             <span className="text-xl leading-none">💬</span>
             <span className="text-[10px] font-medium">커뮤니티</span>
           </button>
+
         </div>
       </nav>
+
     </main>
   )
 }
