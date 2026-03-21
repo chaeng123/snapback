@@ -49,6 +49,16 @@ function getNextDateString(dateStr: string) {
   return `${year}-${month}-${day}`
 }
 
+// ✅ 추가된 함수: 이전 날짜 문자열 반환 (OFF 시 전날 N 근무 확인용)
+function getPrevDateString(dateStr: string) {
+  const date = parseLocalDate(dateStr)
+  date.setDate(date.getDate() - 1)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function formatDisplayDate(dateString: string) {
   const date = parseLocalDate(dateString)
   const weekdays = ['일', '월', '화', '수', '목', '금', '토']
@@ -148,28 +158,31 @@ export default function ScheduleSetupClient() {
       const copied = { ...prev }
       const empty = Array(24).fill(false)
 
+      // ✅ 전날 밤 11시(23시)에 근무가 있었는지 확인하여 N 근무의 여파 파악
+      const prevDate = getPrevDateString(date)
+      const hasPrevNight = copied[prevDate]?.[23] ?? false
+
       if (preset === 'D') copied[date] = applyRange(empty, 7, 15)
       else if (preset === 'E') copied[date] = applyRange(empty, 15, 23)
-      else if (preset === 'OFF') copied[date] = empty
+      else if (preset === 'OFF') {
+        const offSchedule = [...empty]
+        // ✅ 전날 N 근무가 있었다면 당일 새벽(00:00 ~ 08:00) 유지
+        if (hasPrevNight) {
+          for (let h = 0; h < 8; h++) offSchedule[h] = true
+        }
+        copied[date] = offSchedule
+      } 
       else if (preset === 'N') {
-        console.log(`[디버그] N 근무 클릭됨 - 당일: ${date}`)
-        
-        // 1. 당일 22:00 ~ 24:00 설정
-        copied[date] = applyRange(empty, 23, 24)
+        const currentDaySchedule = copied[date] ? [...copied[date]] : [...empty]
+        copied[date] = applyRange(currentDaySchedule, 22, 24)
 
-        // 2. 익일 날짜 계산 및 적용
         const nextDate = getNextDateString(date)
-        console.log(`[디버그] 익일 날짜 계산됨: ${nextDate}`)
-
         if (copied[nextDate] !== undefined) {
-          console.log(`[디버그] 익일 데이터가 존재하여 새벽 0~8시를 칠합니다.`)
           const nextDaySchedule = [...copied[nextDate]]
           for (let h = 0; h < 8; h++) {
             nextDaySchedule[h] = true
           }
           copied[nextDate] = nextDaySchedule
-        } else {
-          console.log(`[디버그] 주의: ${nextDate}가 캘린더 범위에 없어 새벽 근무를 표시할 수 없습니다.`)
         }
       }
 
