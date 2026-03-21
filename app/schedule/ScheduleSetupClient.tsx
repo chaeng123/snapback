@@ -40,6 +40,16 @@ function getDateRange(start: string, end: string) {
   return dates
 }
 
+// ✅ 추가된 함수: 다음 날짜 문자열 반환 (N 근무 처리를 위해 사용)
+function getNextDateString(dateStr: string) {
+  const date = parseLocalDate(dateStr)
+  date.setDate(date.getDate() + 1)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function formatDisplayDate(dateString: string) {
   const date = parseLocalDate(dateString)
   const weekdays = ['일', '월', '화', '수', '목', '금', '토']
@@ -130,6 +140,7 @@ export default function ScheduleSetupClient() {
     setPaintMode(null)
   }
 
+  // ✅ 변경된 부분: N 근무의 교차 일자(Cross-day) 처리 적용
   const applyPreset = (date: string, preset: 'D' | 'E' | 'N' | 'OFF') => {
     setSchedule((prev) => {
       const copied = { ...prev }
@@ -137,7 +148,22 @@ export default function ScheduleSetupClient() {
 
       if (preset === 'D') copied[date] = applyRange(empty, 7, 15)
       if (preset === 'E') copied[date] = applyRange(empty, 15, 23)
-      if (preset === 'N') copied[date] = applyRange(empty, 23, 7)
+      if (preset === 'N') {
+        // 해당 날짜: 22:00 ~ 24:00 (1시간 단위 블록 포함)
+        copied[date] = applyRange(empty, 22, 24)
+
+        // 다음 날짜: 00:00 ~ 08:00
+        const nextDate = getNextDateString(date)
+        if (copied[nextDate]) {
+          // 다음 날짜가 선택된 캘린더 범위 내에 있는 경우에만 처리
+          // 기존 다른 일정을 완전히 지우지 않고 새벽 시간만 덮어씁니다.
+          const nextDaySchedule = [...copied[nextDate]]
+          for (let h = 0; h < 8; h++) {
+            nextDaySchedule[h] = true
+          }
+          copied[nextDate] = nextDaySchedule
+        }
+      }
       if (preset === 'OFF') copied[date] = empty
 
       return copied
