@@ -22,6 +22,13 @@ function getNextDateString(dateStr: string) {
   return formatDate(date)
 }
 
+// 30분 단위 시간을 1시간 단위 배열(0~23) 인덱스로 근사치 변환하는 함수
+// (현재 저장 구조가 24칸의 boolean 배열이므로, '07:30'이면 7시부터 칠하는 식으로 단순화합니다)
+function timeStrToHour(timeStr: string) {
+  const [hour] = timeStr.split(':').map(Number)
+  return hour
+}
+
 function applyRange(hours: boolean[], startHour: number, endHour: number) {
   const copied = [...hours]
   if (startHour < endHour) {
@@ -33,33 +40,45 @@ function applyRange(hours: boolean[], startHour: number, endHour: number) {
   return copied
 }
 
-type ShiftType = 'D' | 'E' | 'N' | 'OFF'
+// 30분 단위 타임 옵션 생성기
+const generateTimeOptions = () => {
+  const options = []
+  for (let i = 0; i < 24; i++) {
+    const hour = String(i).padStart(2, '0')
+    options.push(`${hour}:00`)
+    options.push(`${hour}:30`)
+  }
+  return options
+}
+const TIME_OPTIONS = generateTimeOptions()
 
 export default function OnboardingPage() {
   const router = useRouter()
 
-  // 1. 기본 정보 상태 (기존 기능 복구)
+  // 1. 기본 정보 상태
   const [hospital, setHospital] = useState('')
   const [department, setDepartment] = useState('')
   const [shiftType, setShiftType] = useState('3교대')
 
-  // 2. 근무 시간 설정 상태 (0~24시 기준)
-  const [shiftTimes, setShiftTimes] = useState({
-    D: { start: 7, end: 15 },
-    E: { start: 15, end: 23 },
-    N: { start: 22, end: 8 },
+  // 2. 근무 시간 설정 상태 (문자열 'HH:MM' 기반으로 변경, 동적 추가 가능)
+  const [shiftTimes, setShiftTimes] = useState<Record<string, { start: string, end: string, color: string }>>({
+    D: { start: '07:00', end: '15:00', color: 'emerald' },
+    E: { start: '15:00', end: '23:00', color: 'amber' },
+    N: { start: '22:00', end: '08:00', color: 'indigo' },
   })
 
+  // 커스텀 근무 추가용 상태
+  const [newShiftName, setNewShiftName] = useState('')
+  
   // 3. 캘린더 및 스케줄 상태
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date())
   const [activeDate, setActiveDate] = useState<string | null>(null)
-  const [assignedShifts, setAssignedShifts] = useState<Record<string, ShiftType>>({})
+  const [assignedShifts, setAssignedShifts] = useState<Record<string, string>>({}) // ShiftType -> string으로 확장
 
   // 🗓 캘린더 날짜 계산
   const calendarDays = useMemo(() => {
     const year = currentMonthDate.getFullYear()
     const month = currentMonthDate.getMonth()
-    
     const firstDay = new Date(year, month, 1)
     const lastDay = new Date(year, month + 1, 0)
     
@@ -86,8 +105,28 @@ export default function OnboardingPage() {
     setCurrentMonthDate(newDate)
   }
 
+  // ✍️ 커스텀 근무 추가 로직
+  const handleAddCustomShift = () => {
+    const name = newShiftName.trim().toUpperCase()
+    if (!name) return
+    if (name === 'OFF' || shiftTimes[name]) {
+      alert('이미 존재하는 이름이거나 사용할 수 없는 이름(OFF)입니다.')
+      return
+    }
+    if (name.length > 4) {
+      alert('근무 이름은 4글자 이하로 입력해주세요.')
+      return
+    }
+
+    setShiftTimes(prev => ({
+      ...prev,
+      [name]: { start: '09:00', end: '18:00', color: 'sky' } // 기본값: sky 색상
+    }))
+    setNewShiftName('')
+  }
+
   // ✍️ 연속 입력 로직
-  const handleShiftClick = (shift: ShiftType) => {
+  const handleShiftClick = (shift: string) => {
     if (!activeDate) {
       alert('달력에서 입력을 시작할 날짜를 먼저 선택해주세요!')
       return
@@ -108,19 +147,35 @@ export default function OnboardingPage() {
 
     for (const date of sortedDates) {
       const shift = assignedShifts[date]
+      
       if (!finalSchedule[date]) finalSchedule[date] = Array(24).fill(false)
 
-      if (shift === 'D') {
-        finalSchedule[date] = applyRange(finalSchedule[date], shiftTimes.D.start, shiftTimes.D.end)
-      } else if (shift === 'E') {
-        finalSchedule[date] = applyRange(finalSchedule[date], shiftTimes.E.start, shiftTimes.E.end)
-      } else if (shift === 'N') {
-        finalSchedule[date] = applyRange(finalSchedule[date], shiftTimes.N.start, 24)
-        const nextDate = getNextDateString(date)
-        if (!finalSchedule[nextDate]) finalSchedule[nextDate] = Array(24).fill(false)
-        finalSchedule[nextDate] = applyRange(finalSchedule[nextDate], 0, shiftTimes.N.end)
+      if (shift !== 'OFF') {
+        const times = shiftTimes[shift]
+        const startH = timeStrToHour(times.start)
+        const endH = timeStrToHour(times.end)
+
+        // 나이트처럼 밤을 넘기는 교대근무인지 판별 (startH > endH)
+        if (startH > endH) {
+          finalSchedule[date] = applyRange(finalSchedule[date], startH, 24)
+          const nextDate = getNextDateString(date)
+          if (!finalSchedule[nextDate]) finalSchedule[nextDate] = Array(24).fill(false)
+          finalSchedule[nextDate] = applyRange(finalSchedule[nextDate], 0, endH)
+        } else {
+          // 당일치기 근무
+          finalSchedule[date] = applyRange(finalSchedule[date], startH, endH)
+        }
       }
     }
+
+    // shiftTimes 정보를 0~23 정수로 변환하여 저장 (기존 DashboardClient 호환용)
+    const convertedShiftTimes: Record<string, { start: number, end: number }> = {}
+    Object.keys(shiftTimes).forEach(key => {
+      convertedShiftTimes[key] = {
+        start: timeStrToHour(shiftTimes[key].start),
+        end: timeStrToHour(shiftTimes[key].end)
+      }
+    })
 
     const payload = {
       hospital,
@@ -129,27 +184,48 @@ export default function OnboardingPage() {
       startDate: sortedDates[0],
       endDate: sortedDates[sortedDates.length - 1],
       schedule: finalSchedule,
-      // ✅ 사용자 커스텀 시간대 정보 추가 저장
-      shiftTimes: shiftTimes, 
+      shiftTimes: convertedShiftTimes, 
     }
 
     localStorage.setItem('sleep-onboarding-schedule', JSON.stringify(payload))
     router.push('/sleep-plan') 
   }
 
-  const updateShiftTime = (shift: 'D'|'E'|'N', type: 'start'|'end', value: number) => {
+  const updateShiftTime = (shift: string, type: 'start'|'end', value: string) => {
     setShiftTimes(prev => ({
       ...prev,
       [shift]: { ...prev[shift], [type]: value }
     }))
   }
 
+  const removeCustomShift = (shift: string) => {
+    if (['D', 'E', 'N'].includes(shift)) return // 기본 근무는 삭제 불가
+    
+    const newTimes = { ...shiftTimes }
+    delete newTimes[shift]
+    setShiftTimes(newTimes)
+
+    // 이미 할당된 스케줄에서도 제거
+    const newAssigned = { ...assignedShifts }
+    Object.keys(newAssigned).forEach(date => {
+      if (newAssigned[date] === shift) delete newAssigned[date]
+    })
+    setAssignedShifts(newAssigned)
+  }
+
+  // 색상 매핑을 위한 헬퍼 클래스 (Tailwind 동적 클래스 문제 방지)
+  const colorMap: Record<string, { text: string, bg: string, ring: string, active: string }> = {
+    emerald: { text: 'text-emerald-500', bg: 'bg-emerald-50', ring: 'border-emerald-200', active: 'hover:bg-emerald-100' },
+    amber: { text: 'text-amber-500', bg: 'bg-amber-50', ring: 'border-amber-200', active: 'hover:bg-amber-100' },
+    indigo: { text: 'text-indigo-500', bg: 'bg-indigo-50', ring: 'border-indigo-200', active: 'hover:bg-indigo-100' },
+    sky: { text: 'text-sky-500', bg: 'bg-sky-50', ring: 'border-sky-200', active: 'hover:bg-sky-100' },
+  }
+
   return (
-    // 다크모드 대응: 전체 텍스트 색상을 text-slate-900으로 기본 세팅
-    <main className="min-h-screen bg-slate-50 px-4 py-8 pb-40 text-slate-900">
+    <main className="min-h-screen bg-slate-50 px-4 py-8 pb-48 text-slate-900">
       <div className="mx-auto max-w-lg space-y-6">
         
-        {/* 1. 상단 정보 입력란 (복구됨 & 다크모드 대응 완료) */}
+        {/* 1. 상단 정보 입력란 */}
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
           <h1 className="text-2xl font-bold text-slate-900">시작하기</h1>
           <p className="mt-2 text-sm text-slate-600">
@@ -162,7 +238,6 @@ export default function OnboardingPage() {
               value={hospital}
               onChange={(e) => setHospital(e.target.value)}
               placeholder="병원 또는 기관명"
-              // 다크모드 텍스트 반전 방지를 위해 bg-white, text-slate-900 명시
               className="w-full rounded-2xl bg-white text-slate-900 placeholder:text-slate-400 border border-slate-200 px-4 py-3 outline-none focus:border-sky-400"
             />
             <input
@@ -184,34 +259,58 @@ export default function OnboardingPage() {
           </div>
         </div>
 
-        {/* 2. 근무 시간 커스텀 */}
+        {/* 2. 근무 시간 커스텀 (30분 단위) */}
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
           <h2 className="text-sm font-semibold text-slate-800 mb-4">나의 기본 근무 시간</h2>
           <div className="space-y-3">
-            {(['D', 'E', 'N'] as const).map((shift) => (
-              <div key={shift} className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl">
-                <span className={`font-bold w-8 ${
-                  shift === 'D' ? 'text-emerald-500' : shift === 'E' ? 'text-amber-500' : 'text-indigo-500'
-                }`}>{shift}</span>
-                <div className="flex items-center gap-2">
-                  <select 
-                    value={shiftTimes[shift].start} 
-                    onChange={(e) => updateShiftTime(shift, 'start', Number(e.target.value))}
-                    className="bg-white text-slate-900 border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none"
-                  >
-                    {Array.from({length: 24}).map((_, i) => <option key={i} value={i} className="text-slate-900">{i}시</option>)}
-                  </select>
-                  <span className="text-slate-400">~</span>
-                  <select 
-                    value={shiftTimes[shift].end} 
-                    onChange={(e) => updateShiftTime(shift, 'end', Number(e.target.value))}
-                    className="bg-white text-slate-900 border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none"
-                  >
-                    {Array.from({length: 24}).map((_, i) => <option key={i} value={i} className="text-slate-900">{i}시</option>)}
-                  </select>
+            {Object.entries(shiftTimes).map(([shift, times]) => {
+               const colors = colorMap[times.color] || colorMap['sky']
+               const isCustom = !['D', 'E', 'N'].includes(shift)
+
+               return (
+                <div key={shift} className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl relative group">
+                  <div className="flex items-center gap-2">
+                    {isCustom && (
+                      <button onClick={() => removeCustomShift(shift)} className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-200 text-slate-500 text-xs hover:bg-rose-100 hover:text-rose-500">
+                        ×
+                      </button>
+                    )}
+                    <span className={`font-bold w-10 text-center ${colors.text}`}>{shift}</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <select 
+                      value={times.start} 
+                      onChange={(e) => updateShiftTime(shift, 'start', e.target.value)}
+                      className="bg-white text-slate-900 border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none w-20"
+                    >
+                      {TIME_OPTIONS.map(time => <option key={time} value={time} className="text-slate-900">{time}</option>)}
+                    </select>
+                    <span className="text-slate-400">~</span>
+                    <select 
+                      value={times.end} 
+                      onChange={(e) => updateShiftTime(shift, 'end', e.target.value)}
+                      className="bg-white text-slate-900 border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none w-20"
+                    >
+                      {TIME_OPTIONS.map(time => <option key={time} value={time} className="text-slate-900">{time}</option>)}
+                    </select>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
+          </div>
+
+          {/* 추가 기능: 나만의 근무 생성 */}
+          <div className="mt-4 flex gap-2">
+            <input 
+              type="text" 
+              value={newShiftName} 
+              onChange={(e) => setNewShiftName(e.target.value)}
+              placeholder="추가 근무명 (예: HD)"
+              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-sky-400"
+              maxLength={4}
+            />
+            <button onClick={handleAddCustomShift} className="bg-slate-800 text-white rounded-xl px-4 py-2 text-sm font-bold hover:bg-slate-700">추가</button>
           </div>
         </div>
 
@@ -239,6 +338,8 @@ export default function OnboardingPage() {
               const shift = assignedShifts[dateStr]
               const isActive = activeDate === dateStr
 
+              const shiftColor = shift && shift !== 'OFF' ? colorMap[shiftTimes[shift]?.color || 'sky'].text : 'text-slate-400'
+
               return (
                 <div 
                   key={dateStr}
@@ -251,11 +352,7 @@ export default function OnboardingPage() {
                     {dayNum}
                   </span>
                   {shift && (
-                    <span className={`mt-0.5 text-[10px] font-bold ${
-                      shift === 'D' ? 'text-emerald-500' :
-                      shift === 'E' ? 'text-amber-500' :
-                      shift === 'N' ? 'text-indigo-500' : 'text-slate-400'
-                    }`}>
+                    <span className={`mt-0.5 text-[10px] font-bold ${shiftColor}`}>
                       {shift}
                     </span>
                   )}
@@ -270,14 +367,30 @@ export default function OnboardingPage() {
 
       </div>
 
-      {/* 🚀 4. 하단 고정: 빠른 입력 버튼 & 다음 단계 */}
+      {/* 🚀 4. 하단 고정: 동적 빠른 입력 버튼 & 다음 단계 */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] z-50">
         <div className="mx-auto max-w-lg">
-          <div className="grid grid-cols-4 gap-2 mb-4">
-            <button onClick={() => handleShiftClick('D')} className="py-3 rounded-2xl bg-emerald-50 text-emerald-600 font-bold hover:bg-emerald-100 transition shadow-sm border border-emerald-100">Day</button>
-            <button onClick={() => handleShiftClick('E')} className="py-3 rounded-2xl bg-amber-50 text-amber-600 font-bold hover:bg-amber-100 transition shadow-sm border border-amber-100">Eve</button>
-            <button onClick={() => handleShiftClick('N')} className="py-3 rounded-2xl bg-indigo-50 text-indigo-600 font-bold hover:bg-indigo-100 transition shadow-sm border border-indigo-100">Night</button>
-            <button onClick={() => handleShiftClick('OFF')} className="py-3 rounded-2xl bg-slate-100 text-slate-500 font-bold hover:bg-slate-200 transition shadow-sm border border-slate-200">OFF</button>
+          
+          {/* 동적 버튼 생성 영역 (스크롤 가능하게 처리) */}
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-1 scrollbar-hide snap-x">
+            {Object.keys(shiftTimes).map((shift) => {
+              const colors = colorMap[shiftTimes[shift].color || 'sky']
+              return (
+                <button 
+                  key={shift}
+                  onClick={() => handleShiftClick(shift)} 
+                  className={`min-w-[4rem] flex-1 py-3 rounded-2xl font-bold transition shadow-sm border ${colors.bg} ${colors.text} ${colors.ring} ${colors.active} snap-start`}
+                >
+                  {shift}
+                </button>
+              )
+            })}
+            <button 
+              onClick={() => handleShiftClick('OFF')} 
+              className="min-w-[4rem] flex-1 py-3 rounded-2xl bg-slate-100 text-slate-500 font-bold hover:bg-slate-200 transition shadow-sm border border-slate-200 snap-start"
+            >
+              OFF
+            </button>
           </div>
           
           <button
